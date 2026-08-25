@@ -1,0 +1,10 @@
+langchain
+langgraph
+langchain-core
+pydantic
+razorpay
+python-dotenv
+ipykernel
+jupyter
+langchain-groq
+
