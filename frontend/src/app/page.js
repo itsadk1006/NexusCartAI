@@ -1,11 +1,14 @@
 "use client";
 
 import React, { useState } from 'react';
-import { ChefHat, Settings } from 'lucide-react';
+import { ChefHat, Settings, LogIn, Store, LogOut } from 'lucide-react';
 import ChatPane from '../components/ChatPane';
 import InspectorPane from '../components/InspectorPane';
+import { useSession, signOut } from 'next-auth/react';
+import Link from 'next/link';
 
 export default function Home() {
+  const { data: session } = useSession();
   const [spendLimit, setSpendLimit] = useState(2000);
   const [mode, setMode] = useState('Human Chat Mode'); // 'Human Chat Mode' or 'AI Buyer Protocol Tester'
   const [traceState, setTraceState] = useState(null);
@@ -38,13 +41,30 @@ export default function Home() {
             <span className="px-2 py-1 text-xs font-semibold bg-emerald-500/10 text-emerald-400 rounded border border-emerald-500/20">Status: Ready</span>
             <span className="px-2 py-1 text-xs font-semibold bg-indigo-500/10 text-indigo-400 rounded border border-indigo-500/20">Agent Protocol: UAP v1.0</span>
 
-            <button
-              onClick={() => setMode(mode === 'Human Chat Mode' ? 'AI Buyer Protocol Tester' : 'Human Chat Mode')}
-              className="ml-2 flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-md transition-colors"
-            >
-              <Settings className="w-4 h-4" />
-              {mode}
-            </button>
+            <div className="ml-2 flex items-center gap-2 border-l border-slate-700 pl-4">
+              {session ? (
+                <>
+                  <div className="text-xs text-slate-300 mr-2 flex flex-col items-end">
+                    <span>{session.user.name}</span>
+                    <span className="text-[10px] text-emerald-400 capitalize">{session.user.role}</span>
+                  </div>
+                  {session.user.role === 'merchant' && (
+                    <Link href="/merchant/dashboard" className="p-1.5 text-slate-300 hover:text-indigo-400 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors">
+                      <Store className="w-4 h-4" />
+                    </Link>
+                  )}
+                  <button onClick={() => signOut()} className="p-1.5 text-slate-300 hover:text-rose-400 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors">
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </>
+              ) : (
+                <Link href="/login" className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors">
+                  <LogIn className="w-4 h-4" />
+                  Sign In
+                </Link>
+              )}
+            </div>
+
           </div>
         </div>
       </header>

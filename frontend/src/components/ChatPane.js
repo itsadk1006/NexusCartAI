@@ -35,8 +35,9 @@ export default function ChatPane({ sessionId, spendLimit, onTraceUpdate }) {
     setLoading(true);
 
     try {
-      // Mock API call to our local backend
-      const res = await axios.post('http://localhost:3001/api/chat', {
+      // API call to our local backend
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const res = await axios.post(`${API_URL}/api/chat`, {
         message: text,
         sessionId,
         spendLimit

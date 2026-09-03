@@ -1,6 +1,7 @@
 const express = require('express');
 const InventoryItem = require('../models/InventoryItem');
 const AuditLog = require('../models/AuditLog');
+const Order = require('../models/Order');
 
 const router = express.Router();
 
@@ -63,9 +64,44 @@ router.get('/catalog', async (req, res) => {
 // Place Order
 router.post('/agent/order', async (req, res) => {
   try {
-    const { items, total } = req.body;
-    // Process order (mock)
-    res.json({ success: true, message: 'Order placed successfully', orderId: Math.random().toString(36).substring(7) });
+    const { items, total, source } = req.body;
+
+    const newOrder = await Order.create({
+      items,
+      total,
+      source: source || 'AI_BUYER',
+      status: 'PENDING'
+    });
+
+    res.json({ success: true, message: 'Order placed successfully', orderId: newOrder._id });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// Get all orders (Merchant Dashboard)
+router.get('/orders', async (req, res) => {
+  try {
+    const orders = await Order.find().sort({ timestamp: -1 });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// Update order status (Merchant HITL)
+router.put('/orders/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['ACCEPTED', 'REJECTED'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+    }
+    const updatedOrder = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    if (!updatedOrder) {
+        return res.status(404).json({ error: 'Order not found' });
+    }
+    res.json(updatedOrder);
   } catch (error) {
     res.status(500).json({ error: 'Internal Server Error' });
   }
