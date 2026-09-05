@@ -45,43 +45,33 @@ This is a full stack application using Node.js/Express for the backend and React
 
 ### Project Structure
 
-*   `server/`: Contains the Node.js/Express backend API.
-*   `frontend/`: Contains the React/Next.js frontend application.
+*   `server/`: Contains the1. Seed the Database
+Run this once to populate your MongoDB with the mock inventory data:
+
+cd server
+npm run seed
+2. Start the FastAPI Agent Service
+Run this in a dedicated terminal window from the root of the repository:
+
+cd server
+uvicorn agent_service:app --host 0.0.0.0 --port 8000
+(This will start the Python microservice handling the LangGraph AI logic on port 8000).
+
+3. Start the Express Backend Proxy
+Run this in a second dedicated terminal window from the root of the repository:
+
+cd server
+npm start
+(This will start the Node.js API that serves the catalog, manages orders, and proxies chat requests to your FastAPI service on port 3001).
+
+4. Start the Next.js Frontend
+Run this in a third dedicated terminal window from the root of the repository:
+
+cd frontend
+npm run dev
+(This will start the React UI on http://localhost:3000).
+
+Once all three services are running, you can navigate to http://localhost:3000 in your browser and interact with the AI agent!he React/Next.js frontend application.
 
 ### Setup Instructions
 
-#### Backend (Server)
-
-1.  Navigate to the `server` directory:
-    ```bash
-    cd server
-    ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Set up your environment variables. Create a `.env` file in the `server` directory and add your MongoDB URI and a port:
-    ```
-    MONGO_URI=mongodb://localhost:27017/nexuscart
-    PORT=3001
-    ```
-4.  Start the server:
-    ```bash
-    npm start
-    ```
-
-#### Frontend
-
-1.  Navigate to the `frontend` directory:
-    ```bash
-    cd frontend
-    ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Start the development server:
-    ```bash
-    npm run dev
-    ```
-4.  Open your browser and navigate to `http://localhost:3000`.
