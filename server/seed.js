@@ -1,3 +1,4 @@
+// Verified catalog seed for NexusCart AI Track 1
 require('dotenv').config();
 const mongoose = require('mongoose');
 const InventoryItem = require('./models/InventoryItem');

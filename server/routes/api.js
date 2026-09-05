@@ -1,37 +1,39 @@
 const express = require('express');
+const axios = require('axios');
 const InventoryItem = require('../models/InventoryItem');
 const AuditLog = require('../models/AuditLog');
 const Order = require('../models/Order');
 
 const router = express.Router();
 
-// Mock Chat Endpoint
+// Chat Endpoint with FastAPI Proxy
 router.post('/chat', async (req, res) => {
   try {
     const { message, sessionId, spendLimit } = req.body;
 
-    // This is a placeholder mock response.
-    // In reality, this would connect to the custom LangGraph agent engine.
-    const mockTrace = {
-        step: 1,
-        agentStep: "Intent Extraction",
-        parsedEntities: ["chocolate cake", "4 people"],
-        nodesEvaluated: 4
-    };
+    // Proxy the request to the FastAPI service
+    const agentResponse = await axios.post('http://127.0.0.1:8000/api/agent/chat', {
+      user_query: message,
+      spend_limit_inr: spendLimit,
+      thread_id: sessionId
+    });
 
-    const mockResponse = {
-        message: "I can help with that! Here are the ingredients for a chocolate cake for 4 people.",
-        bundle: [
-            { name: "Cocoa Powder", quantity: 1, unitPrice: 150, inStock: true },
-            { name: "All-Purpose Flour", quantity: 1, unitPrice: 60, inStock: true }
-        ],
-        upsell: {
-            name: "Non-stick Cake Pan",
-            price: 250
-        },
-        calculatedTotal: 210,
-        trace: mockTrace,
-        status: spendLimit >= 210 ? "APPROVED" : "HITL_TRIGGERED"
+    const agentData = agentResponse.data;
+
+    const responsePayload = {
+        message: "Here are the ingredients for your recipe based on our catalog.",
+        bundle: agentData.cart.map(item => ({
+            name: item.name,
+            quantity: item.requested_qty,
+            unitPrice: item.unit_price_inr,
+            inStock: true
+        })),
+        fallback: agentData.fallback_items || agentData.fallback_cart,
+        upsell: null, // Modify if the API returns upsell
+        calculatedTotal: agentData.total_inr,
+        trace: agentData.audit_trace,
+        status: agentData.total_inr <= spendLimit || agentData.is_approved ? "APPROVED" : "HITL_TRIGGERED",
+        paymentLink: agentData.payment_link_url
     };
 
     // Log the interaction
@@ -39,12 +41,12 @@ router.post('/chat', async (req, res) => {
         sessionId,
         userQuery: message,
         spendLimit,
-        calculatedTotal: mockResponse.calculatedTotal,
-        status: mockResponse.status,
-        trace: mockTrace
+        calculatedTotal: responsePayload.calculatedTotal,
+        status: responsePayload.status,
+        trace: responsePayload.trace
     });
 
-    res.json(mockResponse);
+    res.json(responsePayload);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal Server Error' });
