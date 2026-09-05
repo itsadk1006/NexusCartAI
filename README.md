@@ -23,7 +23,12 @@ Buyer Intent Parser -> Inventory Matcher -> Seller Stock Gate -> Razorpay Paymen
 
 ## Post-Mortem: "What broke at 2 AM"
 
-[Placeholder for Post-Mortem Essay: A brief overview of challenges faced during development, unexpected edge cases in agent behavior, and how we solved them.]
+At 2 AM, right as I was wiring my LangGraph orchestration to the deterministic inventory matcher, the entire pipeline crashed with a tool_use_failed 400 Bad Request. I was using Groq (Llama 3.3) to extract natural language buyer intents into a strict RecipeExtraction Pydantic schema. However, the model kept hallucinating conversational markdown (e.g., "Sure, here are your ingredients!"), which completely broke the deterministic Python logic required for the Razorpay checkout.
+
+I tried forcing .with_structured_output(method="json_mode"), but that immediately triggered a massive Pydantic ValidationError. The LLM got lazy, dropped required fields like dish_name and is_cooking_or_baking, and only returned the raw array.
+
+How I got out:
+I realized I needed to guide the JSON mode explicitly. I engineered a bulletproof system prompt, injecting an exact JSON blueprint using double curly braces {{ }} so LangChain wouldn't confuse the formatting variables. By forcing the LLM to follow this rigid template and coupling it with strict Pydantic validation, I completely decoupled the AI's language reasoning from the financial math. The parser ran flawlessly, allowing my Python backend to safely calculate the cart total and trigger the HITL circuit breaker
 
 ---
 
