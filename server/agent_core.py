@@ -3,7 +3,6 @@ import time
 import sys
 import json
 from typing import List, Dict, Any, Optional, Literal, TypedDict, Annotated
-import operator
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
