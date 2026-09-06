@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { ChefHat, Settings, LogIn, Store, LogOut } from 'lucide-react';
+import { ChefHat, LogIn, Store, LogOut } from 'lucide-react';
 import ChatPane from '../components/ChatPane';
 import InspectorPane from '../components/InspectorPane';
 import { useSession, signOut } from 'next-auth/react';
