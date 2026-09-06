@@ -37,14 +37,14 @@ router.post('/chat', async (req, res) => {
     };
 
     // Log the interaction
-    await AuditLog.create({
+    AuditLog.create({
         sessionId,
         userQuery: message,
         spendLimit,
         calculatedTotal: responsePayload.calculatedTotal,
         status: responsePayload.status,
         trace: responsePayload.trace
-    });
+    }).catch(err => console.error('Failed to write audit log:', err));
 
     res.json(responsePayload);
   } catch (error) {
