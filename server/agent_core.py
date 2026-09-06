@@ -107,6 +107,8 @@ YOU MUST RESPOND ONLY WITH A VALID JSON OBJECT EXACTLY MATCHING THIS STRUCTURE:
     recipe_chain = prompt | structured_llm
 else:
     recipe_chain = MockRecipeChain()
+
+def match_inventory_and_calculate(extracted_indgredients, catalog):
     cart_items = []
     missing_items = []
     subtotal_inr = 0.0
