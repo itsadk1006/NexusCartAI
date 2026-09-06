@@ -1,8 +1,7 @@
 import os
 import time
-import sys
 import json
-from typing import List, Dict, Any, Optional, Literal, TypedDict, Annotated
+from typing import List, Dict, Any, Optional, Literal, TypedDict
 import operator
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -108,14 +107,15 @@ YOU MUST RESPOND ONLY WITH A VALID JSON OBJECT EXACTLY MATCHING THIS STRUCTURE:
     recipe_chain = prompt | structured_llm
 else:
     recipe_chain = MockRecipeChain()
-def match_inventory_and_calculate(extracted_indgredients: List[IngredientItem], catalog: dict) -> dict:
-        cart_items = []
-        missing_items = []
-        subtotal_inr = 0.0
 
-        for item in extracted_indgredients:
-            key = item.name.lower()
-            matched_sku = catalog.get(key)
+def match_inventory_and_calculate(extracted_ingredients, catalog):
+    cart_items = []
+    missing_items = []
+    subtotal_inr = 0.0
+
+    for item in extracted_ingredients:
+        key = item.name.lower()
+        matched_sku = catalog.get(key)
 
             if matched_sku:
                 if matched_sku["stock"] > 0:
