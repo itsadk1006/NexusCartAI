@@ -108,11 +108,13 @@ YOU MUST RESPOND ONLY WITH A VALID JSON OBJECT EXACTLY MATCHING THIS STRUCTURE:
     recipe_chain = prompt | structured_llm
 else:
     recipe_chain = MockRecipeChain()
+
+def match_inventory_and_calculate(extracted_ingredients, catalog):
     cart_items = []
     missing_items = []
     subtotal_inr = 0.0
 
-    for item in extracted_indgredients:
+    for item in extracted_ingredients:
         key = item.name.lower()
         matched_sku = catalog.get(key)
 
@@ -179,6 +181,7 @@ class AgentState(TypedDict):
     spend_limit_inr: float
     dish_name: str
     is_cooking_or_baking: bool
+    ingredients: List[Any]
     cart: List[Dict[str, Any]]
     missing_items: List[Dict[str, Any]]
     fallback_cart: List[Dict[str, Any]]
@@ -218,12 +221,12 @@ def parser_node(state: AgentState) -> dict:
     return {
         "dish_name": parsed.dish_name,
         "is_cooking_or_baking": parsed.is_cooking_or_baking,
+        "ingredients": parsed.ingredients,
         "audit_trace": state.get("audit_trace", []) + [f"Parsed intent: {parsed.dish_name}"]
     }
 
 def matcher_node(state: AgentState) -> dict:
-    parsed = recipe_chain.invoke({"user_query": state["user_query"]})
-    result = match_inventory_and_calculate(parsed.ingredients, MOCK_CATALOG)
+    result = match_inventory_and_calculate(state["ingredients"], MOCK_CATALOG)
     return {
         "cart": result["cart"],
         "missing_items": result["missing_items"],
