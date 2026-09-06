@@ -11,12 +11,6 @@ export default function ChatPane({ sessionId, spendLimit, onTraceUpdate }) {
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
-  const quickPrompts = [
-    "Bake a chocolate cake for 4",
-    "Italian pasta night",
-    "Buy 100 boxes of flour [Test Limit]"
-  ];
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -37,13 +31,15 @@ export default function ChatPane({ sessionId, spendLimit, onTraceUpdate }) {
     try {
       // API call to our local backend
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const res = await axios.post(`${API_URL}/api/chat`, {
-        message: text,
-        sessionId,
-        spendLimit
+      const res = await fetch(`${API_URL}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ message: text, spendLimit: spendLimit, sessionId: sessionId })
       });
 
-      const data = res.data;
+      const data = await res.json();
 
       const assistantMsg = {
         role: 'assistant',
@@ -51,7 +47,8 @@ export default function ChatPane({ sessionId, spendLimit, onTraceUpdate }) {
         bundle: data.bundle,
         upsell: data.upsell,
         calculatedTotal: data.calculatedTotal,
-        status: data.status
+        status: data.status,
+        instructions: data.instructions
       };
 
       setMessages(prev => [...prev, assistantMsg]);
@@ -86,24 +83,38 @@ export default function ChatPane({ sessionId, spendLimit, onTraceUpdate }) {
               </div>
 
               {/* Render Structured Cards if available */}
-              {msg.role === 'assistant' && msg.bundle && (
+              {msg.role === 'assistant' && (msg.bundle || msg.instructions) && (
                 <div className="mt-3 w-full max-w-[85%] flex flex-col gap-3">
 
-                  {/* Ingredient Bundle */}
-                  <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                    <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Ingredient Bundle</h4>
-                    <div className="space-y-2">
-                      {msg.bundle.map((item, i) => (
-                        <div key={i} className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
-                          <div className="flex items-center gap-2">
-                            {item.inStock ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <AlertTriangle className="w-4 h-4 text-amber-500" />}
-                            <span className="text-sm font-medium">{item.name} <span className="text-slate-500 text-xs">x{item.quantity}</span></span>
-                          </div>
-                          <span className="text-sm font-mono text-slate-300">₹{item.unitPrice}</span>
-                        </div>
-                      ))}
+                  {/* Instructions */}
+                  {msg.instructions && msg.instructions.length > 0 && (
+                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                      <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Instructions</h4>
+                      <ol className="list-decimal list-inside space-y-2 text-sm text-slate-300">
+                        {msg.instructions.map((step, i) => (
+                          <li key={i} className="leading-relaxed">{step}</li>
+                        ))}
+                      </ol>
                     </div>
-                  </div>
+                  )}
+
+                  {/* Ingredient Bundle */}
+                  {msg.bundle && (
+                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                      <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Ingredient Bundle</h4>
+                      <div className="space-y-2">
+                        {msg.bundle.map((item, i) => (
+                          <div key={i} className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
+                            <div className="flex items-center gap-2">
+                              {item.inStock ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <AlertTriangle className="w-4 h-4 text-amber-500" />}
+                              <span className="text-sm font-medium">{item.name} <span className="text-slate-500 text-xs">x{item.quantity}</span></span>
+                            </div>
+                            <span className="text-sm font-mono text-slate-300">₹{item.unitPrice}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Upsell Card */}
                   {msg.upsell && (
@@ -166,17 +177,6 @@ export default function ChatPane({ sessionId, spendLimit, onTraceUpdate }) {
 
       {/* Input Area */}
       <div className="p-4 bg-slate-900 border-t border-slate-700">
-        <div className="flex gap-2 mb-3 overflow-x-auto pb-2 scrollbar-hide">
-          {quickPrompts.map((prompt, i) => (
-            <button
-              key={i}
-              onClick={() => handleSend(prompt)}
-              className="whitespace-nowrap px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 rounded-full transition-colors"
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
         <div className="relative">
           <textarea
             value={input}
