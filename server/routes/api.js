@@ -54,9 +54,24 @@ router.post('/chat', async (req, res) => {
 });
 
 // Get Catalog
+let catalogCache = {
+  data: null,
+  timestamp: null
+};
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
 router.get('/catalog', async (req, res) => {
   try {
-    const items = await InventoryItem.find({ stock: { $gt: 0 } });
+    const now = Date.now();
+    if (catalogCache.data && catalogCache.timestamp && (now - catalogCache.timestamp < CACHE_TTL_MS)) {
+      return res.json(catalogCache.data);
+    }
+
+    const items = await InventoryItem.find({ stock: { $gt: 0 } }).lean();
+    catalogCache = {
+      data: items,
+      timestamp: now
+    };
     res.json(items);
   } catch (error) {
     res.status(500).json({ error: 'Internal Server Error' });
