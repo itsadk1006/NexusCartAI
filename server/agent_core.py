@@ -117,22 +117,22 @@ def match_inventory_and_calculate(extracted_ingredients, catalog):
         key = item.name.lower()
         matched_sku = catalog.get(key)
 
-        if matched_sku:
-            if matched_sku["stock"] > 0:
-                cart_items.append({
-                    "sku": matched_sku["sku"],
-                    "name": matched_sku["name"],
-                    "unit_price_inr": matched_sku["price_inr"],
-                    "requested_qty": item.quantity,
-                    "unit": item.unit
-                })
-                subtotal_inr += (matched_sku['price_inr'] * item.quantity)
+            if matched_sku:
+                if matched_sku["stock"] > 0:
+                    cart_items.append({
+                        "sku": matched_sku["sku"],
+                        "name": matched_sku["name"],
+                        "unit_price_inr": matched_sku["price_inr"],
+                        "requested_qty": item.quantity,
+                        "unit": item.unit
+                    })
+                    subtotal_inr += (matched_sku['price_inr'] * item.quantity)
+                else:
+                    missing_items.append({'name': matched_sku['name'], 'reason': 'Out of Stock'})
             else:
-                missing_items.append({'name': matched_sku['name'], 'reason': 'Out of Stock'})
-        else:
-            missing_items.append({'name': item.name, 'reason': 'not sold in the store'})
-            
-    return {'cart': cart_items, 'missing_items': missing_items, 'subtotal_inr': subtotal_inr}
+                missing_items.append({'name': item.name, 'reason': 'not sold in the store'})
+
+        return {'cart': cart_items, 'missing_items': missing_items, 'subtotal_inr': subtotal_inr}
 
 def run_qc_fallback(missing_items, qc_catalog) -> dict:
     recovered_cart = []
