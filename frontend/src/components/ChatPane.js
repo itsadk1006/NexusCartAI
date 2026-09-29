@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Plus, CheckCircle, AlertTriangle, ShoppingCart, Loader2 } from 'lucide-react';
+import { Send, Plus, CheckCircle, AlertTriangle, ShoppingCart, Loader2, CreditCard } from 'lucide-react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -48,7 +48,8 @@ export default function ChatPane({ sessionId, spendLimit, onTraceUpdate }) {
         upsell: data.upsell,
         calculatedTotal: data.calculatedTotal,
         status: data.status,
-        instructions: data.instructions
+        instructions: data.instructions,
+        paymentLink: data.paymentLink
       };
 
       setMessages(prev => [...prev, assistantMsg]);
@@ -57,6 +58,66 @@ export default function ChatPane({ sessionId, spendLimit, onTraceUpdate }) {
     } catch (error) {
       console.error(error);
       setMessages(prev => [...prev, { role: 'assistant', text: 'Error connecting to the server.' }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResume = async (decision) => {
+    setLoading(true);
+
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const res = await fetch(`${API_URL}/api/chat/resume`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ sessionId, decision })
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setMessages(prev => {
+          const updated = [...prev];
+          let hitlIndex = -1;
+          for (let i = updated.length - 1; i >= 0; i--) {
+            if (updated[i].role === 'assistant' && updated[i].status === 'HITL_TRIGGERED') {
+              hitlIndex = i;
+              break;
+            }
+          }
+
+          const finalizedMsg = {
+            role: 'assistant',
+            text: data.message,
+            bundle: data.bundle || (hitlIndex >= 0 ? updated[hitlIndex].bundle : []),
+            upsell: data.upsell !== undefined ? data.upsell : (hitlIndex >= 0 ? updated[hitlIndex].upsell : null),
+            calculatedTotal: data.calculatedTotal !== undefined ? data.calculatedTotal : (hitlIndex >= 0 ? updated[hitlIndex].calculatedTotal : 0),
+            status: data.status,
+            instructions: data.instructions || (hitlIndex >= 0 ? updated[hitlIndex].instructions : null),
+            paymentLink: data.paymentLink
+          };
+
+          if (hitlIndex >= 0) {
+            updated[hitlIndex] = finalizedMsg;
+          } else {
+            updated.push(finalizedMsg);
+          }
+          return updated;
+        });
+
+        if (onTraceUpdate) {
+          onTraceUpdate(data);
+        }
+      } else {
+        console.error('Resume error:', data.error);
+        setMessages(prev => [...prev, { role: 'assistant', text: `Failed to resume order: ${data.error || 'Server error'}` }]);
+      }
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => [...prev, { role: 'assistant', text: 'Error connecting to the server for resume.' }]);
     } finally {
       setLoading(false);
     }
@@ -133,13 +194,41 @@ export default function ChatPane({ sessionId, spendLimit, onTraceUpdate }) {
                   {msg.status === 'APPROVED' ? (
                     <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-4 flex justify-between items-center mt-2">
                       <div>
-                        <p className="text-xs text-emerald-400/80 uppercase font-semibold tracking-wider">Total Approved</p>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <CheckCircle className="w-4 h-4 text-emerald-400" />
+                          <p className="text-xs text-emerald-400 uppercase font-semibold tracking-wider">Total Approved</p>
+                        </div>
                         <p className="text-lg font-bold text-emerald-400 font-mono">₹{msg.calculatedTotal}</p>
                       </div>
-                      <button className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-lg transition-colors">
-                        <ShoppingCart className="w-4 h-4" />
-                        Proceed to Checkout
-                      </button>
+                      {msg.paymentLink ? (
+                        <a
+                          href={msg.paymentLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-lg transition-colors shadow-lg shadow-emerald-900/30"
+                        >
+                          <CreditCard className="w-4 h-4" />
+                          Pay with Razorpay
+                        </a>
+                      ) : (
+                        <button className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-lg transition-colors">
+                          <ShoppingCart className="w-4 h-4" />
+                          Proceed to Checkout
+                        </button>
+                      )}
+                    </div>
+                  ) : msg.status === 'CANCELLED' ? (
+                    <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4 flex items-center justify-between mt-2">
+                      <div className="flex items-center gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-rose-400" />
+                        <div>
+                          <p className="text-xs text-rose-400 uppercase font-semibold tracking-wider">Order Cancelled</p>
+                          <p className="text-sm text-slate-300">Budget override was declined.</p>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-md">
+                        CANCELLED
+                      </span>
                     </div>
                   ) : msg.status === 'HITL_TRIGGERED' ? (
                     <div className="bg-rose-900/20 border border-rose-500/30 rounded-xl p-4 flex flex-col gap-3 mt-2">
@@ -149,10 +238,20 @@ export default function ChatPane({ sessionId, spendLimit, onTraceUpdate }) {
                       </div>
                       <p className="text-xs text-rose-300/80">Human-In-The-Loop required. Do you want to approve this override?</p>
                       <div className="flex gap-2">
-                        <button className="flex-1 px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg transition-colors">
+                        <button
+                          disabled={loading}
+                          onClick={() => handleResume("CONFIRM")}
+                          className="flex-1 px-3 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                           CONFIRM & OVERRIDE
                         </button>
-                        <button className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg transition-colors">
+                        <button
+                          disabled={loading}
+                          onClick={() => handleResume("CANCEL")}
+                          className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                           CANCEL ORDER
                         </button>
                       </div>

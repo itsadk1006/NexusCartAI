@@ -74,6 +74,76 @@ router.post('/chat', async (req, res) => {
   }
 });
 
+// Resume Endpoint for HITL with FastAPI Proxy
+router.post('/chat/resume', async (req, res) => {
+  try {
+    const { sessionId, decision } = req.body;
+    const threadId = sessionId || 'default_session';
+
+    // Proxy the resume request to the FastAPI service
+    const agentResponse = await axios.post('http://127.0.0.1:8000/api/agent/resume', {
+      thread_id: threadId,
+      decision: decision
+    });
+
+    const agentData = agentResponse.data;
+    const isApproved = Boolean(agentData.is_approved);
+    const status = isApproved ? "APPROVED" : "CANCELLED";
+
+    const responsePayload = {
+      message: isApproved
+        ? (agentData.dish_name
+            ? `Override approved for "${agentData.dish_name}". Order is ready for checkout.`
+            : "Override approved. Order is ready for checkout.")
+        : "Order was cancelled by user.",
+      bundle: [
+        ...(agentData.cart || []).map(item => ({
+          name: item.name,
+          quantity: item.requested_qty,
+          unitPrice: item.unit_price_inr,
+          inStock: true
+        })),
+        ...(agentData.fallback_items || []).map(item => ({
+          name: `${item.name} (${item.provider})`,
+          quantity: 1,
+          unitPrice: item.unit_price_inr,
+          inStock: true
+        }))
+      ],
+      fallback: agentData.fallback_items || [],
+      upsell: agentData.upsell_item ? {
+        sku: agentData.upsell_item.sku,
+        name: agentData.upsell_item.name,
+        price: agentData.upsell_item.price_inr,
+        pitch: agentData.upsell_item.pitch
+      } : null,
+      calculatedTotal: agentData.total_inr,
+      trace: agentData.audit_trace,
+      status: status,
+      paymentLink: agentData.payment_link_url
+    };
+
+    // Log the interaction
+    try {
+      await AuditLog.create({
+        sessionId: threadId,
+        userQuery: `[HITL_RESUME] ${decision}`,
+        spendLimit: 0,
+        calculatedTotal: responsePayload.calculatedTotal,
+        status: responsePayload.status,
+        trace: responsePayload.trace
+      });
+    } catch (auditErr) {
+      console.warn('AuditLog logging skipped (MongoDB may be offline):', auditErr.message);
+    }
+
+    res.json(responsePayload);
+  } catch (error) {
+    console.error('FastAPI Agent Resume Proxy Error:', error?.response?.data || error.message);
+    res.status(500).json({ error: error?.response?.data?.detail || 'Internal Server Error' });
+  }
+});
+
 // Get Catalog
 router.get('/catalog', async (req, res) => {
   try {

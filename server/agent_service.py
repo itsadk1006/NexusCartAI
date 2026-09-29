@@ -79,5 +79,34 @@ async def chat_endpoint(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class ResumeRequest(BaseModel):
+    thread_id: str
+    decision: str
+
+@app.post("/api/agent/resume", response_model=ChatResponse)
+async def resume_endpoint(request: ResumeRequest):
+    try:
+        config = {"configurable": {"thread_id": request.thread_id}}
+        snapshot = agent_app.get_state(config)
+        if not snapshot.next:
+            raise HTTPException(status_code=400, detail="Thread is not in an active or paused state to resume.")
+
+        output = agent_app.invoke(Command(resume=request.decision), config=config)
+        return ChatResponse(
+            cart=output.get("cart", []),
+            fallback_items=output.get("fallback_cart", []),
+            missing_items=output.get("missing_items", []),
+            total_inr=float(output.get("total_inr", 0.0)),
+            audit_trace=output.get("audit_trace", []),
+            payment_link_url=output.get("payment_link_url"),
+            is_approved=bool(output.get("is_approved", False)),
+            dish_name=output.get("dish_name"),
+            upsell_item=output.get("upsell_item")
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

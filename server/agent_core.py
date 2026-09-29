@@ -2,12 +2,8 @@ import os
 import sys
 import json
 import time
-import operator
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal, TypedDict, Annotated
-
-from dotenv import load_dotenv
-from pydantic import BaseModel, Field
 import operator
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -100,12 +96,6 @@ prompt = ChatPromptTemplate.from_messages([
 
 structured_llm = llm.with_structured_output(RecipeExtraction, method="json_mode")
 recipe_chain = prompt | structured_llm
-
-if llm is not None:
-    structured_llm = llm.with_structured_output(RecipeExtraction, method="json_mode")
-    recipe_chain = prompt | structured_llm
-else:
-    recipe_chain = MockRecipeChain()
 
 def match_inventory_and_calculate(extracted_ingredients: List[IngredientItem], catalog: dict) -> dict:
     cart_items = []
@@ -290,6 +280,12 @@ def hitl_pause_node(state: AgentState) -> dict:
     return {"is_approved": False, "audit_trace": state.get("audit_trace", []) + ["HITL: Cancelled"]}
 
 def checkout_node(state: AgentState) -> dict:
+    if any("HITL: Cancelled" in t for t in state.get("audit_trace", [])):
+        return {
+            "payment_link_url": None,
+            "is_approved": False,
+            "audit_trace": state.get("audit_trace", []) + ["Checkout aborted due to budget limit cancellation."]
+        }
     link = generate_test_payment_link(state["total_inr"], f"Order for {state.get('dish_name', 'Recipe')}")
     return {
         "payment_link_url": link,
