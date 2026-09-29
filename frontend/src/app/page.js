@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { ChefHat, Settings, LogIn, Store, LogOut } from 'lucide-react';
+import { ChefHat, LogIn, Store, LogOut } from 'lucide-react';
 import ChatPane from '../components/ChatPane';
 import InspectorPane from '../components/InspectorPane';
 import { useSession, signOut } from 'next-auth/react';
@@ -10,7 +10,6 @@ import Link from 'next/link';
 export default function Home() {
   const { data: session } = useSession();
   const [spendLimit, setSpendLimit] = useState(2000);
-  const [mode, setMode] = useState('Human Chat Mode'); // 'Human Chat Mode' or 'AI Buyer Protocol Tester'
   const [traceState, setTraceState] = useState(null);
   const [sessionId] = useState(`session-${Math.random().toString(36).substring(7)}`);
 

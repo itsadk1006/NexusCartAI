@@ -2,8 +2,12 @@ import os
 import sys
 import json
 import time
+import operator
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal, TypedDict, Annotated
+
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 import operator
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -97,6 +101,12 @@ prompt = ChatPromptTemplate.from_messages([
 structured_llm = llm.with_structured_output(RecipeExtraction, method="json_mode")
 recipe_chain = prompt | structured_llm
 
+if llm is not None:
+    structured_llm = llm.with_structured_output(RecipeExtraction, method="json_mode")
+    recipe_chain = prompt | structured_llm
+else:
+    recipe_chain = MockRecipeChain()
+
 def match_inventory_and_calculate(extracted_ingredients: List[IngredientItem], catalog: dict) -> dict:
     cart_items = []
     missing_items = []
@@ -105,7 +115,11 @@ def match_inventory_and_calculate(extracted_ingredients: List[IngredientItem], c
     for item in extracted_ingredients:
         item_name_norm = item.name.lower().replace("-", " ").strip()
         matched_sku = catalog.get(item_name_norm)
-        
+
+        if not matched_sku:
+            key = item.name.lower()
+            matched_sku = catalog.get(key)
+
         # Fuzzy/substring matching against store catalog
         if not matched_sku:
             for cat_key, cat_val in catalog.items():
