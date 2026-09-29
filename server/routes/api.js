@@ -10,46 +10,67 @@ const router = express.Router();
 router.post('/chat', async (req, res) => {
   try {
     const { message, sessionId, spendLimit } = req.body;
+    const limit = Number(spendLimit) || 2000;
+    const threadId = sessionId || `session_${Date.now()}`;
 
     // Proxy the request to the FastAPI service
     const agentResponse = await axios.post('http://127.0.0.1:8000/api/agent/chat', {
       user_query: message,
-      spend_limit_inr: spendLimit,
-      thread_id: sessionId
+      spend_limit_inr: limit,
+      thread_id: threadId
     });
 
     const agentData = agentResponse.data;
 
     const responsePayload = {
-        message: "Here are the ingredients for your recipe based on our catalog.",
-        bundle: agentData.cart.map(item => ({
-            name: item.name,
-            quantity: item.requested_qty,
-            unitPrice: item.unit_price_inr,
-            inStock: true
-        })),
-        fallback: agentData.fallback_items || agentData.fallback_cart,
-        upsell: null, // Modify if the API returns upsell
+        message: agentData.dish_name
+            ? `Here are the ingredients for "${agentData.dish_name}" based on our catalog.`
+            : "Here are the ingredients for your recipe based on our catalog.",
+        bundle: [
+            ...(agentData.cart || []).map(item => ({
+                name: item.name,
+                quantity: item.requested_qty,
+                unitPrice: item.unit_price_inr,
+                inStock: true
+            })),
+            ...(agentData.fallback_items || []).map(item => ({
+                name: `${item.name} (${item.provider})`,
+                quantity: 1,
+                unitPrice: item.unit_price_inr,
+                inStock: true
+            }))
+        ],
+        fallback: agentData.fallback_items || [],
+        upsell: agentData.upsell_item ? {
+            sku: agentData.upsell_item.sku,
+            name: agentData.upsell_item.name,
+            price: agentData.upsell_item.price_inr,
+            pitch: agentData.upsell_item.pitch
+        } : null,
         calculatedTotal: agentData.total_inr,
         trace: agentData.audit_trace,
-        status: agentData.total_inr <= spendLimit || agentData.is_approved ? "APPROVED" : "HITL_TRIGGERED",
+        status: (agentData.total_inr <= limit || agentData.is_approved) ? "APPROVED" : "HITL_TRIGGERED",
         paymentLink: agentData.payment_link_url
     };
 
     // Log the interaction
-    await AuditLog.create({
-        sessionId,
-        userQuery: message,
-        spendLimit,
-        calculatedTotal: responsePayload.calculatedTotal,
-        status: responsePayload.status,
-        trace: responsePayload.trace
-    });
+    try {
+        await AuditLog.create({
+            sessionId: threadId,
+            userQuery: message,
+            spendLimit: limit,
+            calculatedTotal: responsePayload.calculatedTotal,
+            status: responsePayload.status,
+            trace: responsePayload.trace
+        });
+    } catch (auditErr) {
+        console.warn('AuditLog logging skipped (MongoDB may be offline):', auditErr.message);
+    }
 
     res.json(responsePayload);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    console.error('FastAPI Agent Proxy Error:', error?.response?.data || error.message);
+    res.status(500).json({ error: error?.response?.data?.detail || 'Internal Server Error' });
   }
 });
 

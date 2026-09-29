@@ -1,7 +1,8 @@
 import os
-import time
 import sys
 import json
+import time
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal, TypedDict, Annotated
 import operator
 from dotenv import load_dotenv
@@ -13,20 +14,22 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import interrupt, Command
 import razorpay
 
-# 1. Load the environment variables
-load_dotenv()
+# Robust environment loading (local server/.env and root .env)
+server_dir = Path(__file__).resolve().parent
+root_dir = server_dir.parent
+load_dotenv(server_dir / ".env")
+load_dotenv(root_dir / ".env")
 
 # In-memory store inventory for NexusCart AI
-# 2. Catalogs
 MOCK_CATALOG = {
     "all purpose flour": {"sku": "SKU_FLOUR_01", "name": "All-Purpose Flour (500g)", "price_inr": 60, "stock": 15, "is_margin_booster": False},
     "cocoa powder": {"sku": "SKU_COCOA_01", "name": "Baking Cocoa Powder (150g)", "price_inr": 180, "stock": 10, "is_margin_booster": False},
     "sugar": {"sku": "SKU_SUGAR_01", "name": "Granulated Sugar (500g)", "price_inr": 45, "stock": 20, "is_margin_booster": False},
     "baking powder": {"sku": "SKU_BAKE_01", "name": "Baking Powder (100g)", "price_inr": 40, "stock": 8, "is_margin_booster": False},
     "unsalted butter": {"sku": "SKU_BUTTER_01", "name": "Unsalted Butter (200g)", "price_inr": 120, "stock": 5, "is_margin_booster": False},
-    'vanilla extract': {'sku': 'SKU_VANILLA_01', 'name': 'Pure Vanilla Extract (50ml)', 'price_inr': 220, 'stock': 0, 'is_margin_booster': False}, # Out of stock for testing
-    'cake tin': {'sku': 'SKU_TIN_01', 'name': '8-inch Non-Stick Cake Tin', 'price_inr': 250, 'stock': 12, 'is_margin_booster': True}, # Upsell
-    'birthday candles': {'sku': 'SKU_CANDLE_01', 'name': 'Metallic Birthday Candles (10pk)', 'price_inr': 80, 'stock': 30, 'is_margin_booster': True} # Upsell
+    "vanilla extract": {"sku": "SKU_VANILLA_01", "name": "Pure Vanilla Extract (50ml)", "price_inr": 220, "stock": 0, "is_margin_booster": False}, # Out of stock for testing
+    "cake tin": {"sku": "SKU_TIN_01", "name": "8-inch Non-Stick Cake Tin", "price_inr": 250, "stock": 12, "is_margin_booster": True}, # Upsell
+    "birthday candles": {"sku": "SKU_CANDLE_01", "name": "Metallic Birthday Candles (10pk)", "price_inr": 80, "stock": 30, "is_margin_booster": True} # Upsell
 }
 
 # The Mock Quick-Commerce Catalog
@@ -38,7 +41,6 @@ QUICK_COMMERCE_CATALOG = {
     }
 }
 
-# 3. Pydantic Schemas & LLM Chain
 class IngredientItem(BaseModel):
     name: str = Field(description="Normalized ingredient name, e.g., 'all purpose flour'")
     quantity: float = Field(description="Numeric quantity required")
@@ -51,29 +53,17 @@ class RecipeExtraction(BaseModel):
     ingredients: List[IngredientItem]
     instructions: List[str] = Field(description="Step-by-step cooking or baking instructions")
 
-# For the test, we mock the invoke of the recipe chain since we do not have a real GROQ API KEY
-class MockRecipeChain:
-    def invoke(self, inputs):
-        class MockExtraction:
-            dish_name = 'chocolate cake'
-            servings = 4
-            is_cooking_or_baking = True
-            ingredients = [
-                IngredientItem(name='cocoa powder', quantity=1, unit='150g'),
-                IngredientItem(name='all purpose flour', quantity=1, unit='500g')
-            ]
-            instructions = ['Mix', 'Bake']
-        return MockExtraction()
+# Groq LLM chain configured with GROQ_API_KEY and RecipeExtraction Pydantic schema
+groq_api_key = os.getenv("GROQ_API_KEY")
+groq_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
-# Use real GROQ-backed chain when API key exists, otherwise fall back to the mock for tests
-if os.getenv('GROQ_API_KEY'):
-    llm = ChatGroq(
-        model='openai/gpt-oss-20b',
-        temperature=0,
-        api_key=os.getenv('GROQ_API_KEY')
-    )
+llm = ChatGroq(
+    model=groq_model,
+    temperature=0,
+    api_key=groq_api_key
+)
 
-    system_prompt = '''You are an expert executive chef and grocery planner.
+system_prompt = """You are an expert executive chef and grocery planner.
 Your job is to break down the user's dish into standard, essential cooking ingredients.
 
 Rules:
@@ -82,39 +72,46 @@ Rules:
 - Strictly output ingredients, units, and quantities—never calculate prices.
 
 YOU MUST RESPOND ONLY WITH A VALID JSON OBJECT EXACTLY MATCHING THIS STRUCTURE:
-{
+{{
   "dish_name": "String (name of the dish)",
   "servings": Integer (number of people),
   "is_cooking_or_baking": Boolean (true or false),
   "ingredients": [
-    {
+    {{
       "name": "String",
       "quantity": Float,
       "unit": "String"
-    }
+    }}
   ],
   "instructions": [
     "String (Step 1...)",
     "String (Step 2...)"
   ]
-}'''
+}}"""
 
-    prompt = ChatPromptTemplate.from_messages([
-        ('system', system_prompt),
-        ('human', '{user_query}')
-    ])
+prompt = ChatPromptTemplate.from_messages([
+    ("system", system_prompt),
+    ("human", "{user_query}")
+])
 
-    structured_llm = llm.with_structured_output(RecipeExtraction, method='json_mode')
-    recipe_chain = prompt | structured_llm
-else:
-    recipe_chain = MockRecipeChain()
+structured_llm = llm.with_structured_output(RecipeExtraction, method="json_mode")
+recipe_chain = prompt | structured_llm
+
+def match_inventory_and_calculate(extracted_ingredients: List[IngredientItem], catalog: dict) -> dict:
     cart_items = []
     missing_items = []
     subtotal_inr = 0.0
 
-    for item in extracted_indgredients:
-        key = item.name.lower()
-        matched_sku = catalog.get(key)
+    for item in extracted_ingredients:
+        item_name_norm = item.name.lower().replace("-", " ").strip()
+        matched_sku = catalog.get(item_name_norm)
+        
+        # Fuzzy/substring matching against store catalog
+        if not matched_sku:
+            for cat_key, cat_val in catalog.items():
+                if cat_key in item_name_norm or item_name_norm in cat_key:
+                    matched_sku = cat_val
+                    break
 
         if matched_sku:
             if matched_sku["stock"] > 0:
@@ -125,13 +122,23 @@ else:
                     "requested_qty": item.quantity,
                     "unit": item.unit
                 })
-                subtotal_inr += (matched_sku['price_inr'] * item.quantity)
+                subtotal_inr += (matched_sku["price_inr"] * item.quantity)
             else:
-                missing_items.append({'name': matched_sku['name'], 'reason': 'Out of Stock'})
+                missing_items.append({
+                    "name": matched_sku["name"],
+                    "reason": "Out of Stock"
+                })
         else:
-            missing_items.append({'name': item.name, 'reason': 'not sold in the store'})
-            
-    return {'cart': cart_items, 'missing_items': missing_items, 'subtotal_inr': subtotal_inr}
+            missing_items.append({
+                "name": item.name,
+                "reason": "not sold in the store"
+            })
+    
+    return {
+        "cart": cart_items,
+        "missing_items": missing_items,
+        "subtotal_inr": subtotal_inr
+    }
 
 def run_qc_fallback(missing_items, qc_catalog) -> dict:
     recovered_cart = []
@@ -141,14 +148,17 @@ def run_qc_fallback(missing_items, qc_catalog) -> dict:
     for item in missing_items:
         item_name_lower = item["name"].lower()
         matched_qc_key = None
+        
         for key in qc_catalog.keys():
             if key in item_name_lower:
                 matched_qc_key = key
                 break
+                
         if matched_qc_key:
             provider_prices = qc_catalog[matched_qc_key]
             cheapest_provider = min(provider_prices, key=provider_prices.get)
             cheapest_price = provider_prices[cheapest_provider]
+            
             recovered_cart.append({
                 "name": item["name"],
                 "provider": cheapest_provider,
@@ -158,11 +168,16 @@ def run_qc_fallback(missing_items, qc_catalog) -> dict:
         else:
             still_missing.append(item)
 
-    return {'recovered_cart': recovered_cart, 'recovered_subtotal_inr': recovered_subtotal_inr, 'still_missing': still_missing}
+    return {
+        "recovered_cart": recovered_cart,
+        "recovered_subtotal_inr": recovered_subtotal_inr,
+        "still_missing": still_missing
+    }
 
 def get_margin_upsell(is_cooking_or_baking: bool, catalog: dict):
     if not is_cooking_or_baking:
         return None
+    
     for key, item in catalog.items():
         if item.get("is_margin_booster") and item.get("stock", 0) > 0:
             return {
@@ -173,12 +188,14 @@ def get_margin_upsell(is_cooking_or_baking: bool, catalog: dict):
             }
     return None
 
-# 5. LangGraph State & Razorpay
-class AgentState(TypedDict):
+class AgentState(TypedDict, total=False):
     user_query: str
     spend_limit_inr: float
     dish_name: str
+    servings: int
     is_cooking_or_baking: bool
+    ingredients: List[IngredientItem]
+    instructions: List[str]
     cart: List[Dict[str, Any]]
     missing_items: List[Dict[str, Any]]
     fallback_cart: List[Dict[str, Any]]
@@ -189,7 +206,7 @@ class AgentState(TypedDict):
     audit_trace: List[str]
 
 razorpay_client = razorpay.Client(
-    auth=(os.getenv('RAZORPAY_KEY_ID', 'rzp_test_placeholder'),
+    auth=(os.getenv("RAZORPAY_KEY_ID", "rzp_test_placeholder"), 
           os.getenv("RAZORPAY_KEY_SECRET", "placeholder_secret"))
 )
 
@@ -212,18 +229,23 @@ def generate_test_payment_link(amount_inr: float, description: str) -> str:
     except Exception:
         return f"https://rzp.io/i/mock_test_{amount_paise}"
 
-# 6. Graph Nodes
 def parser_node(state: AgentState) -> dict:
-    parsed = recipe_chain.invoke({"user_query": state["user_query"]})
+    parsed: RecipeExtraction = recipe_chain.invoke({"user_query": state["user_query"]})
     return {
         "dish_name": parsed.dish_name,
+        "servings": parsed.servings,
         "is_cooking_or_baking": parsed.is_cooking_or_baking,
-        "audit_trace": state.get("audit_trace", []) + [f"Parsed intent: {parsed.dish_name}"]
+        "ingredients": parsed.ingredients,
+        "instructions": parsed.instructions,
+        "audit_trace": state.get("audit_trace", []) + [f"Parsed intent: {parsed.dish_name} (servings: {parsed.servings})"]
     }
 
 def matcher_node(state: AgentState) -> dict:
-    parsed = recipe_chain.invoke({"user_query": state["user_query"]})
-    result = match_inventory_and_calculate(parsed.ingredients, MOCK_CATALOG)
+    ingredients = state.get("ingredients")
+    if not ingredients:
+        parsed = recipe_chain.invoke({"user_query": state["user_query"]})
+        ingredients = parsed.ingredients
+    result = match_inventory_and_calculate(ingredients, MOCK_CATALOG)
     return {
         "cart": result["cart"],
         "missing_items": result["missing_items"],
@@ -232,30 +254,33 @@ def matcher_node(state: AgentState) -> dict:
     }
 
 def fallback_and_upsell_node(state: AgentState) -> dict:
-    fallback = run_qc_fallback(state["missing_items"], QUICK_COMMERCE_CATALOG)
-    upsell = get_margin_upsell(state["is_cooking_or_baking"], MOCK_CATALOG)
-    new_total = state['total_inr'] + fallback['recovered_subtotal_inr']
+    fallback = run_qc_fallback(state.get("missing_items", []), QUICK_COMMERCE_CATALOG)
+    upsell = get_margin_upsell(state.get("is_cooking_or_baking", False), MOCK_CATALOG)
+    
+    new_total = state.get("total_inr", 0.0) + fallback["recovered_subtotal_inr"]
     if upsell:
-        new_total += upsell['price_inr']
+        new_total += upsell["price_inr"]
+        
     return {
         "fallback_cart": fallback["recovered_cart"],
         "upsell_item": upsell,
         "total_inr": new_total,
-        "audit_trace": state["audit_trace"] + [f"Fallback/Upsell applied. Grand total: ₹{new_total}"]
+        "audit_trace": state.get("audit_trace", []) + [f"Fallback/Upsell applied. Grand total: ₹{new_total}"]
     }
 
 def hitl_pause_node(state: AgentState) -> dict:
     user_decision = interrupt(f"Cart total ₹{state['total_inr']} exceeds limit ₹{state['spend_limit_inr']}. Type 'CONFIRM'.")
+    
     if str(user_decision).strip().upper() == "CONFIRM":
-        return {"is_approved": True, "audit_trace": state["audit_trace"] + ["HITL: Approved"]}
-    return {"is_approved": False, "audit_trace": state["audit_trace"] + ["HITL: Cancelled"]}
+        return {"is_approved": True, "audit_trace": state.get("audit_trace", []) + ["HITL: Approved"]}
+    return {"is_approved": False, "audit_trace": state.get("audit_trace", []) + ["HITL: Cancelled"]}
 
 def checkout_node(state: AgentState) -> dict:
-    link = generate_test_payment_link(state["total_inr"], f"Order for {state['dish_name']}")
+    link = generate_test_payment_link(state["total_inr"], f"Order for {state.get('dish_name', 'Recipe')}")
     return {
         "payment_link_url": link,
         "is_approved": True,
-        "audit_trace": state["audit_trace"] + [f"Payment link generated: {link}"]
+        "audit_trace": state.get("audit_trace", []) + [f"Payment link generated: {link}"]
     }
 
 def check_limit_router(state: AgentState) -> Literal["hitl_pause_node", "checkout_node"]:
@@ -264,6 +289,7 @@ def check_limit_router(state: AgentState) -> Literal["hitl_pause_node", "checkou
     return "checkout_node"
 
 workflow = StateGraph(AgentState)
+
 workflow.add_node("parser_node", parser_node)
 workflow.add_node("matcher_node", matcher_node)
 workflow.add_node("fallback_and_upsell_node", fallback_and_upsell_node)
